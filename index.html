@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yan – Webapp med Tärningar och Flera Spelare</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      padding: 2rem;
+    }
+    table input {
+      width: 100%;
+      padding: 0.25rem;
+      box-sizing: border-box;
+    }
+    .readonly {
+      background: #eee;
+    }
+    .dice-container {
+      margin-bottom: 1rem;
+    }
+    .die {
+      display: inline-block;
+      width: 50px;
+      height: 50px;
+      line-height: 50px;
+      text-align: center;
+      font-size: 24px;
+      border: 2px solid #333;
+      border-radius: 6px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+    .selected {
+      background-color: #d1e7dd;
+      border-color: #0f5132;
+    }
+    .player-section {
+      margin-bottom: 2rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 class="mb-4">Yan – Tärningsspel</h1>
+  <div class="mb-3">
+    <label for="numPlayers" class="form-label">Antal spelare:</label>
+    <input type="number" id="numPlayers" class="form-control" min="1" max="6" value="2">
+    <button class="btn btn-primary mt-2" onclick="setupGame()">Starta spel</button>
+  </div>
+  <div id="gameArea"></div>
+</div>
+
+<script>
+  let currentPlayer = 0;
+  let rollCount = 0;
+  const maxRolls = 3;
+  const dice = [0, 0, 0, 0, 0];
+  const selected = [false, false, false, false, false];
+  const playerData = [];
+
+  const rows = [
+    {key:'r1', label:'1:or'}, {key:'r2', label:'2:or'}, {key:'r3', label:'3:or'},
+    {key:'r4', label:'4:or'}, {key:'r5', label:'5:or'}, {key:'r6', label:'6:or'},
+    {key:'sum16', label:'Summa (1–6)', readonly:true}, {key:'bonus', label:'Bonus', readonly:true},
+    {key:'min', label:'MIN'}, {key:'max', label:'MAX'},
+    {key:'pair2', label:'2 PAR'}, {key:'full', label:'FULL'},
+    {key:'straight', label:'STEGE'}, {key:'four', label:'FYRTAL'}, {key:'yan', label:'YAN'},
+    {key:'sumcol', label:'Summa kolumn', readonly:true}, {key:'total', label:'Total', readonly:true}
+  ];
+
+  function setupGame() {
+    const num = parseInt(document.getElementById('numPlayers').value);
+    const gameArea = document.getElementById('gameArea');
+    gameArea.innerHTML = '';
+    playerData.length = 0;
+
+    for (let p = 0; p < num; p++) {
+      const section = document.createElement('div');
+      section.className = 'player-section';
+      section.innerHTML = `
+        <h3>Spelare ${p + 1}: <input type="text" id="playerName${p}" placeholder="Namn" /></h3>
+        <div class="dice-container" id="diceContainer${p}"></div>
+        <button class="btn btn-secondary mb-3" onclick="rollDice(${p})" id="rollBtn${p}">Slå tärning</button>
+        <p>Slag kvar: <span id="rollsLeft${p}">3</span></p>
+        <div class="table-responsive">
+          <table class="table table-bordered text-center align-middle">
+            <thead>
+              <tr>
+                <th>Ruta</th>
+                <th>Kolumn 1</th>
+                <th>Kolumn 2</th>
+                <th>Kolumn 3</th>
+                <th>Kolumn 4</th>
+              </tr>
+            </thead>
+            <tbody id="yanBody${p}"></tbody>
+          </table>
+        </div>
+        <div class="mt-3" id="result${p}"></div>
+      `;
+      gameArea.appendChild(section);
+      const tableBody = document.getElementById(`yanBody${p}`);
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.label}</td>`;
+        for (let c = 1; c <= 4; c++) {
+          const id = `p${p}_c${c}_${row.key}`;
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.id = id;
+          input.className = row.readonly ? 'readonly form-control' : 'form-control';
+          input.readOnly = !!row.readonly;
+          const td = document.createElement('td');
+          td.appendChild(input);
+          tr.appendChild(td);
+        }
+        tableBody.appendChild(tr);
+      });
+      playerData.push({rollCount: 0, dice: [0,0,0,0,0], selected: [false,false,false,false,false]});
+      renderDice(p);
+    }
+  }
+
+  function renderDice(p) {
+    const container = document.getElementById(`diceContainer${p}`);
+    container.innerHTML = '';
+    playerData[p].dice.forEach((val, i) => {
+      const die = document.createElement('div');
+      die.className = 'die' + (playerData[p].selected[i] ? ' selected' : '');
+      die.textContent = val > 0 ? val : '-';
+      die.onclick = () => {
+        playerData[p].selected[i] = !playerData[p].selected[i];
+        renderDice(p);
+      };
+      container.appendChild(die);
+    });
+  }
+
+  function rollDice(p) {
+    if (playerData[p].rollCount >= maxRolls) return;
+    for (let i = 0; i < 5; i++) {
+      if (!playerData[p].selected[i]) playerData[p].dice[i] = Math.floor(Math.random() * 6) + 1;
+    }
+    playerData[p].rollCount++;
+    document.getElementById(`rollsLeft${p}`).textContent = maxRolls - playerData[p].rollCount;
+    renderDice(p);
+    suggestPlacement(p);
+  }
+
+  function suggestPlacement(p) {
+    const freq = [0, 0, 0, 0, 0, 0, 0];
+    const dice = playerData[p].dice;
+    dice.forEach(d => freq[d]++);
+    const result = document.getElementById(`result${p}`);
+    result.innerHTML = '<h5>Möjliga kombinationer:</h5><ul>';
+    for (let i = 1; i <= 6; i++) {
+      if (freq[i]) {
+        const score = freq[i] * i;
+        result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'r${i}', ${score})">${i}: ${freq[i]}x = ${score}p</li>`;
+      }
+    }
+    if (freq.includes(5)) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'yan', 50 + dice.reduce((a,b)=>a+b,0))">YAN</li>`;
+    else if (freq.includes(4)) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'four', 40 + dice.reduce((a,b)=>a+b,0))">FYRTAL</li>`;
+    else if (freq.includes(3) && freq.includes(2)) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'full', 20 + dice.reduce((a,b)=>a+b,0))">FULL</li>`;
+    else if (Object.values(freq).filter(f => f >= 2).length >= 2) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'pair2', 10 + dice.reduce((a,b)=>a+b,0))">2 PAR</li>`;
+    if ([1, 2, 3, 4, 5].every(n => freq[n])) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'straight', 30 + 15)">STEGE 1–5</li>`;
+    if ([2, 3, 4, 5, 6].every(n => freq[n])) result.innerHTML += `<li onclick="fillCell(${p}, 'c2', 'straight', 30 + 20)">STEGE 2–6</li>`;
+    result.innerHTML += '</ul>';
+  }
+
+  function fillCell(player, col, row, value) {
+    const id = `p${player}_${col}_${row}`;
+    const cell = document.getElementById(id);
+    if (cell && !cell.value) cell.value = value;
+  }
+</script>
+</body>
+</html>
